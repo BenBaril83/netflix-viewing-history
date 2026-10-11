@@ -1,0 +1,7 @@
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+# Browser session (contains your Netflix login cookies) and exported data
+.netflix-session/
+output/
