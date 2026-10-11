@@ -7,3 +7,5 @@
 
 Only the Netflix session cookies are stored (in the add-on's private `/data`). `date_format` is a
 `strptime` pattern (e.g. `%m/%d/%y`) matching your Netflix locale; set it to get dated sensors.
+
+`engine`: `chromium` (default) or `obscura` (lighter; experimental, see the repo README). Sign-in always uses Chromium.

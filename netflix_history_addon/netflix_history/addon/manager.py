@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from .. import scraper
+from .. import engine, scraper
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ IDLE, LOGIN, SCRAPING = "idle", "login", "scraping"
 class Options:
     scrape_interval_hours: int = 24
     date_format: str = ""
+    engine: str = "chromium"
 
     @classmethod
     def load(cls, path: Path) -> "Options":
@@ -39,6 +41,7 @@ class Options:
         return cls(
             scrape_interval_hours=int(raw.get("scrape_interval_hours", 24)),
             date_format=raw.get("date_format") or "",
+            engine=raw.get("engine") or "chromium",
         )
 
 
@@ -69,6 +72,7 @@ class Manager:
         self.options = options
         self.session_dir = data_dir / "session"
         self.history_path = data_dir / "history.json"
+        self.cookie_file = data_dir / "cookies.json"
         self.status = Status(logged_in=(data_dir / "logged_in").exists())
         self.history: dict = {"updated": None, "profiles": {}}
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browser")
@@ -113,6 +117,8 @@ class Manager:
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             scraper.list_profiles(page)
+            # Always keep a copy so switching to the Obscura engine needs no second login.
+            engine.save_cookies(self.cookie_file, ctx.cookies())
         finally:
             ctx.close()
             self._pw.stop()
@@ -153,14 +159,16 @@ class Manager:
     # -- scraping ----------------------------------------------------------
     def _scrape(self) -> dict:
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        kwargs = dict(date_format=self.options.date_format or None, on_progress=lambda m: self._set(SCRAPING, m))
         with sync_playwright() as p:
+            if self.options.engine == "obscura":
+                return engine.scrape_with_obscura(
+                    p, os.environ.get("OBSCURA_BIN", engine.DEFAULT_BINARY),
+                    self.data_dir / "obscura", self.cookie_file, **kwargs,
+                )
             ctx = scraper.open_context(p, self.session_dir, headless=True, args=scraper.CONTAINER_ARGS)
             try:
-                return scraper.scrape_context(
-                    ctx,
-                    date_format=self.options.date_format or None,
-                    on_progress=lambda m: self._set(SCRAPING, m),
-                )
+                return scraper.scrape_context(ctx, **kwargs)
             finally:
                 ctx.close()
 

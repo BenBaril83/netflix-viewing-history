@@ -24,7 +24,15 @@ Install: Settings → Add-ons → Add-on store → ⋮ → Repositories → add 
 into your HA config (or add the repo to HACS as a custom *Integration* repository) and add the integration.
 Set the add-on's `date_format` (e.g. `%m/%d/%y`) to get the *Watched in last 7 days* sensor; without it that sensor is unknown.
 
-Not verified against real hardware: the Docker build, the noVNC login flow, and the live Netflix pages.
+**Engine option.** `engine: chromium` (default) scrapes with the same Chromium used for login. `engine: obscura`
+scrapes through [Obscura](https://github.com/h4ckf0r0day/obscura), a lightweight headless browser (about 30 MB RAM vs 200+),
+pinned to v0.2.4 in the Dockerfile. Obscura has no window, so you still sign in with Chromium; the Netflix
+session cookies are copied to Obscura for each scrape and refreshed afterwards. Trade-offs: your session
+cookies are handed to a third-party binary (upstream publishes no checksums, so the Dockerfile pins hashes
+taken from the v0.2.4 download), and Obscura's web platform coverage is incomplete. Obscura's stealth mode is
+deliberately not enabled; it's not needed for your own account. Switch back to `chromium` if scrapes fail.
+
+Not verified against real hardware: the Docker build, the noVNC login flow, and the live Netflix pages (including whether Obscura renders them). Both engines are tested against a local fake site (`tests/fake_netflix.py`); set `OBSCURA_BIN` and `NETFLIX_CHROMIUM_PATH` to run those tests.
 
 ## Standalone CLI setup
 

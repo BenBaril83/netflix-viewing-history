@@ -18,6 +18,8 @@ panel_title: Netflix History
 options:
   scrape_interval_hours: 24
   date_format: ""
+  engine: chromium
 schema:
   scrape_interval_hours: int(1,168)
   date_format: str?
+  engine: list(chromium|obscura)

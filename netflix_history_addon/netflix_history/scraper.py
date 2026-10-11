@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import time
 from pathlib import Path
@@ -9,7 +10,8 @@ from playwright.sync_api import BrowserContext, Page, Playwright, sync_playwrigh
 
 from .parse import Entry, parse_entries, parse_profiles
 
-BASE = "https://www.netflix.com"
+# Overridable so tests can point the scraper at a local fake site.
+BASE = os.environ.get("NETFLIX_BASE_URL", "https://www.netflix.com")
 SHOW_MORE = re.compile(r"show more", re.I)
 # Chromium refuses to start as root (i.e. in a container) without this.
 CONTAINER_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -27,6 +29,7 @@ def open_context(p: Playwright, session_dir: Path, headless: bool, args: list[st
         args=args or [],
         locale="en-US",
         no_viewport=not headless,
+        executable_path=os.environ.get("NETFLIX_CHROMIUM_PATH") or None,
     )
 
 
