@@ -1,0 +1,5 @@
+DOMAIN = "netflix_viewing_history"
+CONF_TOKEN = "token"
+DEFAULT_PORT = 8100
+SCAN_INTERVAL_MINUTES = 10
+RECENT_COUNT = 10

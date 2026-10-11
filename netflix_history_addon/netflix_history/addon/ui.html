@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Netflix Viewing History</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1c;--muted:#666;--card:#f4f4f6;--accent:#03a9f4;--err:#c62828}
+@media(prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--muted:#9a9a9a;--card:#1e1e22;--err:#ef5350}}
+body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+.card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:16px}
+button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer;margin-right:8px}
+button:disabled{opacity:.4;cursor:default}
+code{word-break:break-all}.muted{color:var(--muted)}.err{color:var(--err)}
+iframe{width:100%;height:70vh;border:0;border-radius:8px;background:#000}
+</style></head><body>
+<div class="card"><h3 style="margin-top:0">Status</h3>
+<div id="st">Loading…</div><div id="err" class="err"></div>
+<p><button id="bLogin">Sign in to Netflix</button><button id="bDone" hidden>Done</button><button id="bScrape">Refresh now</button></p></div>
+<div id="vnc" class="card" hidden><iframe id="frame"></iframe></div>
+<div class="card"><h3 style="margin-top:0">Integration setup</h3>
+<p class="muted">In Home Assistant add the <b>Netflix Viewing History</b> integration and enter:</p>
+<p>Host: <code>__HOST__</code> <span class="muted">(port 8100; check the add-on's Info page if it can't connect)</span></p>
+<p>Token: <code>__TOKEN__</code></p></div>
+<script>
+const $=id=>document.getElementById(id), base=location.pathname.replace(/\/?$/,'/');
+const post=p=>fetch(base+p,{method:'POST'}).then(r=>r.ok?r.json():r.text().then(t=>{throw t}));
+async function refresh(){
+  const s=await (await fetch(base+'status')).json();
+  const inLogin=s.state==='login';
+  $('st').textContent=(s.state==='scraping'?'Scraping: ':'')+(s.message||(s.logged_in?'Logged in.':'Not logged in.'))
+    +(s.last_success?'  Last success: '+s.last_success:'')+(s.profiles.length?'  Profiles: '+s.profiles.join(', '):'');
+  $('err').textContent=s.last_error||(s.needs_login?'Session expired, sign in again.':'');
+  $('bLogin').hidden=inLogin; $('bDone').hidden=!inLogin;
+  $('bLogin').disabled=$('bScrape').disabled=s.state!=='idle';
+  $('vnc').hidden=!inLogin;
+  if(inLogin&&!$('frame').src){
+    $('frame').src=base+'novnc/vnc.html?autoconnect=true&resize=scale&path='+encodeURIComponent(base+'websockify');
+  } else if(!inLogin){ $('frame').removeAttribute('src'); }
+}
+$('bLogin').onclick=()=>post('login/start').then(refresh,e=>$('err').textContent=e);
+$('bDone').onclick=()=>{$('bDone').disabled=true;post('login/finish').then(()=>{$('bDone').disabled=false;refresh()},e=>$('err').textContent=e)};
+$('bScrape').onclick=()=>post('scrape').then(refresh);
+refresh(); setInterval(refresh,3000);
+</script></body></html>

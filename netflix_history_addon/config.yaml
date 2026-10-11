@@ -1,0 +1,23 @@
+name: Netflix Viewing History
+version: "0.1.0"
+slug: netflix-history
+description: Scrapes the viewing activity of every profile on your Netflix account
+url: https://github.com/BenBaril83/netflix-viewing-history
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: services
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:television-play
+panel_title: Netflix History
+# The API port is reachable by other add-ons / Home Assistant Core over the
+# internal network only; it is deliberately not published on the host.
+options:
+  scrape_interval_hours: 24
+  date_format: ""
+schema:
+  scrape_interval_hours: int(1,168)
+  date_format: str?
