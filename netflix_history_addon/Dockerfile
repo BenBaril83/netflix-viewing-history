@@ -1,6 +1,9 @@
 # Playwright's image already contains Chromium and its system libraries.
 FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
 
+# Non-interactive: tzdata (pulled in by the X/VNC packages) otherwise blocks forever on a time zone prompt.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TZ=Etc/UTC
 RUN apt-get update \
  && apt-get install -y --no-install-recommends xvfb x11vnc novnc curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
