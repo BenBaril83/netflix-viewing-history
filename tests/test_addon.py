@@ -23,7 +23,7 @@ def entry(title, date="2026-10-09"):
 def mgr(tmp_path, monkeypatch):
     m = Manager(tmp_path, Options())
     m.status.logged_in = True
-    monkeypatch.setattr(m, "_scrape", lambda: {"Ben": [entry("A"), entry("B")], "Kids": []})
+    monkeypatch.setattr(m, "_scrape", lambda known=None: {"Ben": [entry("A"), entry("B")], "Kids": []})
     yield m
     m.close()
 
@@ -44,7 +44,7 @@ async def test_scrape_requires_login(mgr):
 
 
 async def test_expired_session_flags_relogin(mgr, monkeypatch):
-    def boom():
+    def boom(known=None):
         raise scraper.NotLoggedIn()
     monkeypatch.setattr(mgr, "_scrape", boom)
     await mgr.scrape()
@@ -54,7 +54,7 @@ async def test_expired_session_flags_relogin(mgr, monkeypatch):
 
 async def test_other_failure_keeps_old_history(mgr, monkeypatch):
     await mgr.scrape()
-    monkeypatch.setattr(mgr, "_scrape", lambda: (_ for _ in ()).throw(RuntimeError("netflix broke")))
+    monkeypatch.setattr(mgr, "_scrape", lambda known=None: (_ for _ in ()).throw(RuntimeError("netflix broke")))
     await mgr.scrape()
     assert "netflix broke" in mgr.status.last_error and len(mgr.history["profiles"]["Ben"]) == 2
 
@@ -70,7 +70,7 @@ async def test_api_requires_token(mgr):
 async def test_api_scrape_is_async_and_rejects_overlap(mgr, monkeypatch):
     gate = asyncio.Event()
     loop = asyncio.get_running_loop()
-    monkeypatch.setattr(mgr, "_scrape", lambda: asyncio.run_coroutine_threadsafe(gate.wait(), loop).result() or {})
+    monkeypatch.setattr(mgr, "_scrape", lambda known=None: asyncio.run_coroutine_threadsafe(gate.wait(), loop).result() or {})
     h = {"Authorization": "Bearer t"}
     async with TestClient(TestServer(build_api_app(mgr, "t"))) as c:
         assert (await c.post("/api/scrape", headers=h)).status == 202
@@ -127,3 +127,33 @@ async def test_ingress_serves_login_snapshot_only_when_present(mgr):
         (mgr.data_dir / "diag" / "login.png").write_bytes(b"\x89PNG")
         assert (await c.get("/diag/login.png")).status == 200
         assert (await c.get("/diag/other.png")).status == 404
+
+
+async def test_scrape_is_incremental_unless_full(mgr, monkeypatch):
+    seen = []
+
+    def fake_scrape(known=None):
+        seen.append(known)
+        return {"Ben": [entry("NEW"), entry("A"), entry("B")], "Kids": []}
+
+    monkeypatch.setattr(mgr, "_scrape", fake_scrape)
+    mgr.history = {"updated": None, "profiles": {"Ben": [entry("A").asdict(), entry("B").asdict()]}}
+    await mgr.scrape()
+    assert [e["title"] for e in seen[0]["Ben"]] == ["A", "B"]  # stored history handed over
+    assert mgr.status.last_new == {"Ben": 1}
+
+    await mgr.scrape(full=True)
+    assert seen[1] is None  # a full rescan ignores what's stored
+
+
+async def test_first_scrape_is_full_and_api_passes_full_flag(mgr, monkeypatch):
+    seen = []
+    monkeypatch.setattr(mgr, "_scrape", lambda known=None: seen.append(known) or {"Ben": [entry("A")]})
+    async with TestClient(TestServer(build_api_app(mgr, "t"))) as c:
+        h = {"Authorization": "Bearer t"}
+        assert (await c.post("/api/scrape", headers=h)).status == 202
+        await mgr._task
+        assert seen == [None] and mgr.status.last_new == {}  # nothing stored yet: full read
+        assert (await c.post("/api/scrape?full=1", headers=h)).status == 202
+        await mgr._task
+        assert seen[1] is None

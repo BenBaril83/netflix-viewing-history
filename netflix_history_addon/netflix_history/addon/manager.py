@@ -56,6 +56,7 @@ class Status:
     last_success: str | None = None
     last_error: str | None = None
     warning: str | None = None
+    last_new: dict = field(default_factory=dict)  # entries added per profile by the last scrape
     diagnostics: dict = field(default_factory=dict)
     profiles: list[str] = field(default_factory=list)
 
@@ -183,9 +184,13 @@ class Manager:
             self._busy.release()
 
     # -- scraping ----------------------------------------------------------
-    def _scrape(self) -> dict:
+    def _scrape(self, known: dict | None = None) -> dict:
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        kwargs = dict(date_format=self.options.date_format or None, on_progress=lambda m: self._set(SCRAPING, m))
+        kwargs = dict(
+            date_format=self.options.date_format or None,
+            on_progress=lambda m: self._set(SCRAPING, m),
+            known=known,
+        )
         with sync_playwright() as p:
             if self.options.engine == "obscura":
                 return engine.scrape_with_obscura(
@@ -239,8 +244,11 @@ class Manager:
             finally:
                 self._set(IDLE)
 
-    async def scrape(self) -> bool:
-        """Run a full scrape. Returns False if something else is already running."""
+    async def scrape(self, full: bool = False) -> bool:
+        """Read what's new since the last scrape (everything on the first run or when `full`).
+
+        Returns False if something else is already running.
+        """
         if not self.status.logged_in:
             self.status.needs_login = True
             return False
@@ -249,7 +257,10 @@ class Manager:
         async with self._busy:
             try:
                 self._set(SCRAPING, "Starting...")
-                results = await self._run(self._scrape)
+                known = None if full else (self.history.get("profiles") or None)
+                before = {n: len(es) for n, es in (known or {}).items()}
+                results = await self._run(self._scrape, known)
+                self.status.last_new = {n: max(0, len(es) - before[n]) for n, es in results.items() if n in before}
                 self.history = {
                     "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "profiles": {n: [e.asdict() for e in es] for n, es in results.items()},
@@ -271,10 +282,10 @@ class Manager:
                 self._set(IDLE)
         return True
 
-    async def scrape_in_background(self) -> bool:
+    async def scrape_in_background(self, full: bool = False) -> bool:
         if self._busy.locked() or not self.status.logged_in:
             return False
-        self._task = asyncio.create_task(self.scrape())
+        self._task = asyncio.create_task(self.scrape(full))
         return True
 
     async def schedule_forever(self) -> None:

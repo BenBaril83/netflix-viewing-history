@@ -54,6 +54,10 @@ netflix-history scrape --show-browser    # watch it work / debug
 Netflix's date format depends on your account locale, so `date_raw` is always kept as-is;
 pass `--date-format` (a `strptime` pattern, e.g. `%y-%m-%d` for Netflix's `26-8-25`) to also get an ISO `date` column.
 
+## How often, and how much
+
+The add-on checks every `scrape_interval_hours` (default 24) and on **Check for new entries** / the integration's refresh button. The first run reads the whole history; after that it only fetches what's new: it stops clicking "Show More" as soon as your newest stored entries appear and adds anything above them. If they don't appear (history was changed on Netflix) it falls back to a full read. **Full rescan** (panel button, or `POST /api/scrape?full=1`) forces a full read, e.g. to pick up entries you hid on Netflix.
+
 ## How it reads Netflix
 
 It reads the "Who's watching?" screen for each profile's ID, then opens `/settings/viewed/<ID>` directly and clicks only "Show More" until the list is complete. There is no profile switching, so Profile Lock PINs are not needed, and it never touches the per-row "Hide from viewing history" controls.

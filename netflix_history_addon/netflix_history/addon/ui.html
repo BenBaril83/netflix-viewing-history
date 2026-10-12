@@ -14,7 +14,7 @@ iframe{width:100%;height:70vh;border:0;border-radius:8px;background:#000}
 </style></head><body>
 <div class="card"><h3 style="margin-top:0">Status</h3>
 <div id="st">Loading…</div><div id="err" class="err"></div><div id="warn" class="warn"></div>
-<p><button id="bLogin">Sign in to Netflix</button><button id="bDone" hidden>Done</button><button id="bScrape">Refresh now</button></p></div>
+<p><button id="bLogin">Sign in to Netflix</button><button id="bDone" hidden>Done</button><button id="bScrape">Check for new entries</button><button id="bFull" title="Re-read the whole history from Netflix">Full rescan</button></p></div>
 <div id="diag" class="card" hidden><h3 style="margin-top:0">What the browser saw</h3>
 <img id="diagImg" class="snap" alt="Last page the add-on looked at"><pre id="diagInfo"></pre></div>
 <div id="vnc" class="card" hidden><iframe id="frame"></iframe></div>
@@ -29,14 +29,15 @@ async function refresh(){
   const s=await (await fetch(base+'status')).json();
   const inLogin=s.state==='login';
   $('st').textContent=(s.state==='scraping'?'Scraping: ':'')+(s.message||(s.logged_in?'Logged in.':'Not logged in.'))
-    +(s.last_success?'  Last success: '+s.last_success:'')+(s.profiles.length?'  Profiles: '+s.profiles.join(', '):'');
+    +(s.last_success?'  Last success: '+s.last_success:'')+(s.profiles.length?'  Profiles: '+s.profiles.join(', '):'')
+    +(Object.keys(s.last_new||{}).length?'  New last time: '+Object.entries(s.last_new).map(([n,c])=>n+' '+c).join(', '):'');
   $('err').textContent=s.last_error||(s.needs_login?'Session expired, sign in again.':'');
   $('warn').textContent=s.warning||'';
   const d=s.diagnostics&&s.diagnostics.login, ds=d?JSON.stringify(d,null,1):'';
   $('diag').hidden=!d||(inLogin);
   if(d&&ds!==window.lastDiag){window.lastDiag=ds;$('diagInfo').textContent=ds;$('diagImg').src=base+'diag/login.png?'+Date.now();}
   $('bLogin').hidden=inLogin; $('bDone').hidden=!inLogin;
-  $('bLogin').disabled=$('bScrape').disabled=s.state!=='idle';
+  $('bLogin').disabled=$('bScrape').disabled=$('bFull').disabled=s.state!=='idle';
   $('vnc').hidden=!inLogin;
   if(inLogin&&!$('frame').src){
     // noVNC builds ws://host:port + '/' + path, so the path must NOT start with '/'.
@@ -46,5 +47,6 @@ async function refresh(){
 $('bLogin').onclick=()=>{$('bLogin').disabled=true;post('login/start').then(refresh,e=>{$('err').textContent=e;refresh()})};
 $('bDone').onclick=()=>{$('bDone').disabled=true;post('login/finish').then(()=>{$('bDone').disabled=false;refresh()},e=>$('err').textContent=e)};
 $('bScrape').onclick=()=>post('scrape').then(refresh);
+$('bFull').onclick=()=>{if(confirm('Re-read the whole history from Netflix? This takes a few minutes.'))post('scrape?full=1').then(refresh)};
 refresh(); setInterval(refresh,3000);
 </script></body></html>

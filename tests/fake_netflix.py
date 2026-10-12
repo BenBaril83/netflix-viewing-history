@@ -15,18 +15,27 @@ TOTALS = {"AAA": 45, "BBB": 3}
 PAGE = 20
 BROKEN_GATE = False  # when True the profile picker uses markup the scraper does not recognise
 DELETE_HITS = []  # paths of any "Hide from viewing history" clicks (must stay empty)
+MORE_HITS = []  # one entry per "Show More" request served
+NEW = {}  # profile ID -> number of newer entries added at the top since the test started
 
 
-def rows(name, start, stop):
+def rows(pid, name, start, stop):
+    """Newest first. Entries added since the start (NEW) sit above the original list."""
     out = []
+    added = NEW.get(pid, 0)
     for i in range(start, stop):
-        title = f'{name} Show: Season 1: "Episode {i}"' if i == 0 else f"{name} title {i}"
+        j = i - added  # index into the original list; negative = newly added
+        if j < 0:
+            title, tid, date = f"{name} NEW {added - i}", 9000 + (added - i), "26-9-30"
+        else:
+            title = f'{name} Show: Season 1: "Episode {j}"' if j == 0 else f"{name} title {j}"
+            tid, date = 1000 + j, f"26-{(j % 9) + 1}-{(j % 28) + 1:02d}"
         out.append(
-            f'<li class="retableRow" data-uia="activity-row"><div class="col date nowrap">26-{(i % 9) + 1}-{(i % 28) + 1:02d}</div>'
-            f'<div class="col title"><a href="/title/{1000 + i}">{title}</a></div>'
-            f'<div class="col report"><a class="reportLink" href="/reportproblem/{1000 + i}">Report a problem</a></div>'
+            f'<li class="retableRow" data-uia="activity-row"><div class="col date nowrap">{date}</div>'
+            f'<div class="col title"><a href="/title/{tid}">{title}</a></div>'
+            f'<div class="col report"><a class="reportLink" href="/reportproblem/{tid}">Report a problem</a></div>'
             f'<div class="col delete"><a class="deleteBtn" data-uia="delete-activity-button" href="#" '
-            f"onclick=\"fetch('/__delete/{1000 + i}');return false\">&#8856;</a></div></li>"
+            f"onclick=\"fetch('/__delete/{tid}');return false\">&#8856;</a></div></li>"
         )
     return "".join(out)
 
@@ -101,14 +110,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(gate_html())
         parts = u.path.strip("/").split("/")
         if parts[:2] == ["settings", "viewed"] and len(parts) >= 3 and parts[2] in PROFILES:
-            pid, total = parts[2], TOTALS[parts[2]]
+            pid = parts[2]
+            total = TOTALS[pid] + NEW.get(pid, 0)
             name = PROFILES[pid]
             if len(parts) == 4 and parts[3] == "more":
+                MORE_HITS.append(pid)
                 n = int(q["page"][0])
                 lo, hi = PAGE * n, min(PAGE * (n + 1), total)
-                return self._send(json.dumps({"html": rows(name, lo, hi), "more": hi < total}), "application/json")
+                return self._send(json.dumps({"html": rows(pid, name, lo, hi), "more": hi < total}), "application/json")
             button = '<button id="more" class="btn btn-blue btn-small" type="button">Show More</button>' if total > PAGE else ""
-            return self._send(ACTIVITY.format(pid=pid, name=name, rows=rows(name, 0, min(PAGE, total)), button=button))
+            return self._send(ACTIVITY.format(pid=pid, name=name, rows=rows(pid, name, 0, min(PAGE, total)), button=button))
         self._send("not found", status=404)
 
 

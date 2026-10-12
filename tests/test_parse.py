@@ -44,3 +44,55 @@ def test_split_show():
     assert split_show("Movie: The Sequel") is None
     assert split_show('Show: Limited Series: "Part One"') == "Show"
     assert split_show("Plain Movie") is None
+
+
+# --- incremental merge ---------------------------------------------------------------------------------
+
+from netflix_history.parse import Entry, find_overlap, merge_new
+
+
+def E(title, tid, date_raw="26-8-25"):
+    return Entry("Ben", date_raw, None, title, str(tid), None)
+
+
+def stored(entries):
+    return [e.asdict() for e in entries]
+
+
+OLD = [E(f"t{i}", i) for i in range(30, 0, -1)]  # newest first
+
+
+def test_overlap_found_after_new_entries():
+    fresh = [E("new2", 902), E("new1", 901)] + OLD[:15]
+    assert find_overlap(fresh, stored(OLD)) == 2
+    merged = merge_new(fresh, stored(OLD), None)
+    assert [e.title for e in merged[:3]] == ["new2", "new1", "t30"] and len(merged) == 32
+
+
+def test_overlap_at_top_means_nothing_new():
+    assert find_overlap(OLD[:20], stored(OLD)) == 0
+    assert len(merge_new(OLD[:20], stored(OLD), None)) == 30  # stored list kept intact, no duplicates
+
+
+def test_overlap_missing_returns_none():
+    assert find_overlap([E("x", 1), E("y", 2)] * 10, stored(OLD)) is None
+    assert merge_new([E("x", 1)], stored(OLD), None) is None
+    assert find_overlap(OLD, []) is None
+
+
+def test_overlap_needs_the_whole_block_not_one_repeated_title():
+    # the same episode watched twice must not be taken for the join point
+    repeat = E("t30", 30)
+    fresh = [E("new", 901), repeat, E("other", 7)] + OLD
+    assert find_overlap(fresh, stored(OLD)) == 3
+
+
+def test_small_history_uses_what_it_has():
+    small = [E("a", 3), E("b", 2), E("c", 1)]
+    assert find_overlap([E("n", 9)] + small, stored(small)) == 1
+
+
+def test_merge_picks_up_a_newly_set_date_format():
+    old = [E("t", 1, "26-8-25")]  # stored with no ISO date (format wasn't set yet)
+    merged = merge_new([E("new", 2)] + old, stored(old), "%y-%m-%d")
+    assert merged[1].date == "2026-08-25"
