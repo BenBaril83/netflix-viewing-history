@@ -53,6 +53,8 @@ class Status:
     needs_login: bool = False
     last_success: str | None = None
     last_error: str | None = None
+    warning: str | None = None
+    diagnostics: dict = field(default_factory=dict)
     profiles: list[str] = field(default_factory=list)
 
 
@@ -106,23 +108,45 @@ class Manager:
         page = self._login_ctx.pages[0] if self._login_ctx.pages else self._login_ctx.new_page()
         page.goto(f"{scraper.BASE}/login")
 
-    def _finish_login(self) -> None:
-        """Close the visible browser, then check headlessly that the login stuck."""
+    def _snapshot(self, page, name: str) -> None:
+        """Save what the browser saw (screenshot + page summary) so failures can be diagnosed."""
+        diag_dir = self.data_dir / "diag"
+        diag_dir.mkdir(exist_ok=True)
         try:
-            if self._login_ctx:
-                self._login_ctx.close()
-        finally:
-            self._login_ctx = None
-        ctx = scraper.open_context(self._pw, self.session_dir, headless=True, args=scraper.CONTAINER_ARGS)
+            page.screenshot(path=str(diag_dir / f"{name}.png"))
+        except Exception:
+            log.warning("Could not take %s screenshot", name, exc_info=True)
+        self.status.diagnostics[name] = scraper.describe_page(page)
+
+    def _finish_login(self) -> str | None:
+        """Verify the login inside the browser the user just used, and keep our own copy of the cookies.
+
+        Raises NotLoggedIn when there's no sign-in. Returns a warning when signed in but the profile
+        picker wasn't recognised (so a markup change doesn't masquerade as a failed login).
+        """
+        ctx = self._login_ctx
+        warning = None
         try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            scraper.list_profiles(page)
-            # Always keep a copy so switching to the Obscura engine needs no second login.
-            engine.save_cookies(self.cookie_file, ctx.cookies())
+            page = ctx.new_page()
+            try:
+                scraper.list_profiles(page)
+            except scraper.ProfilesNotFound as e:
+                warning = str(e)
+            finally:
+                self._snapshot(page, "login")
+            cookies = ctx.cookies()
+            if not any(c["name"] in scraper.LOGIN_COOKIES for c in engine.filter_cookies(cookies)):
+                raise scraper.NotLoggedIn("No Netflix login cookie found.")
+            # Session-only cookies would vanish when this browser closes, so keep our own copy.
+            engine.save_cookies(self.cookie_file, cookies)
         finally:
-            ctx.close()
-            self._pw.stop()
-            self._pw = None
+            try:
+                ctx.close()
+            finally:
+                self._login_ctx = None
+                self._pw.stop()
+                self._pw = None
+        return warning
 
     async def start_login(self) -> None:
         if self._busy.locked():
@@ -141,14 +165,14 @@ class Manager:
             raise RuntimeError("No login in progress")
         try:
             self._set(LOGIN, "Checking login...")
-            await self._run(self._finish_login)
+            self.status.warning = await self._run(self._finish_login)
             (self.data_dir / "logged_in").touch()
             self.status.logged_in, self.status.needs_login, self.status.last_error = True, False, None
             self._set(IDLE, "Logged in.")
-        except scraper.NotLoggedIn:
+        except scraper.NotLoggedIn as e:
             (self.data_dir / "logged_in").unlink(missing_ok=True)
             self.status.logged_in = False
-            self.status.last_error = "Login not detected. Try again and make sure you reach the profile picker."
+            self.status.last_error = f"Login not detected ({e}). See what the browser saw below."
             self._set(IDLE)
         except BaseException as e:
             self.status.last_error = f"Login check failed: {e}"
@@ -166,9 +190,21 @@ class Manager:
                     p, os.environ.get("OBSCURA_BIN", engine.DEFAULT_BINARY),
                     self.data_dir / "obscura", self.cookie_file, **kwargs,
                 )
-            ctx = scraper.open_context(p, self.session_dir, headless=True, args=scraper.CONTAINER_ARGS)
+            # Same setup as the sign-in (visible browser on the virtual display) when one exists:
+            # it's the configuration known to be accepted, and avoids the "HeadlessChrome" user agent.
+            ctx = scraper.open_context(
+                p, self.session_dir, headless=not os.environ.get("DISPLAY"), args=scraper.CONTAINER_ARGS
+            )
             try:
-                return scraper.scrape_context(ctx, **kwargs)
+                saved = engine.load_cookies(self.cookie_file)
+                if saved:
+                    ctx.add_cookies(saved)
+                try:
+                    return scraper.scrape_context(ctx, **kwargs)
+                finally:
+                    fresh = engine.filter_cookies(ctx.cookies())
+                    if fresh:
+                        engine.save_cookies(self.cookie_file, fresh)
             finally:
                 ctx.close()
 
@@ -195,6 +231,8 @@ class Manager:
             except scraper.NotLoggedIn:
                 self.status.needs_login = True
                 self.status.last_error = "Netflix session expired. Open the add-on and sign in again."
+            except scraper.ProfilesNotFound as e:
+                self.status.last_error = str(e)
             except Exception as e:  # keep the schedule alive whatever Netflix does
                 log.exception("Scrape failed")
                 self.status.last_error = f"Scrape failed: {e}"

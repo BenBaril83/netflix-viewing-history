@@ -17,8 +17,34 @@ SHOW_MORE = re.compile(r"show more", re.I)
 CONTAINER_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"]
 
 
+# Cookies that mean "this browser is signed in" (names only; values are never logged).
+LOGIN_COOKIES = ("NetflixId", "SecureNetflixId")
+
+
 class NotLoggedIn(Exception):
     """The saved session has no usable Netflix login."""
+
+
+class ProfilesNotFound(Exception):
+    """Signed in, but the profile picker didn't look like we expected (markup changed?)."""
+
+
+def describe_page(page: Page, limit: int = 15) -> dict:
+    """What the browser is looking at, for diagnostics. Query strings are dropped (they hold tokens)."""
+    try:
+        hrefs = page.eval_on_selector_all(
+            "a[href]", "els => els.map(a => a.getAttribute('href'))"
+        )
+        text = page.inner_text("body")[:300]
+    except Exception:
+        hrefs, text = [], ""
+    seen, links = set(), []
+    for h in hrefs:
+        h = (h or "").split("?")[0]
+        if h and h not in seen:
+            seen.add(h)
+            links.append(h)
+    return {"url": page.url.split("?")[0], "title": page.title(), "text": " ".join(text.split()), "links": links[:limit]}
 
 
 def open_context(p: Playwright, session_dir: Path, headless: bool, args: list[str] | None = None) -> BrowserContext:
@@ -44,14 +70,22 @@ def login(session_dir: Path) -> None:
         ctx.close()
 
 
+PROFILES_TIMEOUT_MS = 15000
+
+
 def list_profiles(page: Page) -> list[tuple[str, str]]:
     page.goto(f"{BASE}/ProfilesGate", wait_until="domcontentloaded")
+    if "/login" in page.url:  # logged out: no point waiting for a picker that won't come
+        raise NotLoggedIn("Netflix sent us to the login page.")
     try:
-        page.wait_for_selector("a[href*='tkn=']", timeout=15000)
+        page.wait_for_selector("a[href*='tkn=']", timeout=PROFILES_TIMEOUT_MS)
     except Exception:
-        raise NotLoggedIn(
-            "Could not find any profiles. You're probably not logged in, "
-            "or Netflix changed its markup."
+        info = describe_page(page)
+        if "/login" in info["url"]:
+            raise NotLoggedIn("Netflix sent us to the login page.") from None
+        raise ProfilesNotFound(
+            f"Signed in, but found no profiles on {info['url']} (title {info['title']!r}). "
+            f"Links seen: {info['links']}"
         ) from None
     return parse_profiles(page.content())
 
