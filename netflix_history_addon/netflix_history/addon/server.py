@@ -58,8 +58,8 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
     async def login_finish(_):
         return await action(mgr.finish_login)
 
-    async def scrape(_):
-        return web.json_response({"started": await mgr.scrape_in_background()})
+    async def scrape(request: web.Request):
+        return web.json_response({"started": await mgr.scrape_in_background(request.query.get("full") == "1")})
 
     async def websockify(request: web.Request):
         """Bridge the noVNC websocket to the local x11vnc TCP socket."""
@@ -108,8 +108,8 @@ def build_api_app(mgr: Manager, token: str) -> web.Application:
     async def history(_):
         return web.json_response({"status": asdict(mgr.status), **mgr.history})
 
-    async def scrape(_):
-        started = await mgr.scrape_in_background()
+    async def scrape(request: web.Request):
+        started = await mgr.scrape_in_background(request.query.get("full") == "1")
         return web.json_response({"started": started}, status=202 if started else 409)
 
     async def debug_probe(request: web.Request):

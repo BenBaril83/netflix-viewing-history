@@ -8,7 +8,15 @@ from typing import Callable
 
 from playwright.sync_api import BrowserContext, Page, Playwright, sync_playwright
 
-from .parse import ACTIVITY_READY_SELECTOR, GATE_TILE_SELECTOR, Entry, parse_entries, parse_profiles
+from .parse import (
+    ACTIVITY_READY_SELECTOR,
+    GATE_TILE_SELECTOR,
+    Entry,
+    find_overlap,
+    merge_new,
+    parse_entries,
+    parse_profiles,
+)
 
 # Overridable so tests can point the scraper at a local fake site.
 BASE = os.environ.get("NETFLIX_BASE_URL", "https://www.netflix.com")
@@ -90,9 +98,14 @@ def list_profiles(page: Page) -> list[tuple[str, str]]:
     return parse_profiles(page.content())
 
 
-def _expand_all(page: Page, pause: float) -> None:
-    """Click "Show More" until the list stops growing. Never touches the per-row "Hide" controls."""
+def _expand_all(page: Page, pause: float, stop: Callable[[], bool] | None = None) -> None:
+    """Click "Show More" until the list stops growing (or `stop()` says we've seen enough).
+
+    Never touches the per-row "Hide" controls.
+    """
     while True:
+        if stop and stop():
+            return
         btn = page.get_by_role("button", name=SHOW_MORE)
         if btn.count() == 0 or not btn.first.is_enabled():
             return
@@ -113,7 +126,14 @@ def scrape_context(
     date_format: str | None = None,
     pause: float = 1.0,
     on_progress: Callable[[str], None] = print,
+    known: dict[str, list[dict]] | None = None,
 ) -> dict[str, list[Entry]]:
+    """Read each profile's activity.
+
+    With `known` (the stored history, newest first) it stops paging as soon as the newest stored entries
+    show up and returns just those plus whatever is newer; if they never appear (history was changed or
+    trimmed) it reads everything, so a full read is always the fallback.
+    """
     results: dict[str, list[Entry]] = {}
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     profiles = list_profiles(page)
@@ -124,9 +144,16 @@ def scrape_context(
         # Each profile's page is addressable by its ID: no profile switching, and no PIN for locked profiles.
         page.goto(f"{BASE}/settings/viewed/{profile_id}", wait_until="domcontentloaded")
         page.wait_for_selector(ACTIVITY_READY_SELECTOR, timeout=20000)
-        _expand_all(page, pause)
+        old = (known or {}).get(name)
+        have_join = (lambda: find_overlap(parse_entries(page.content(), name, date_format), old) is not None) if old else None
+        _expand_all(page, pause, have_join)
         entries = parse_entries(page.content(), name, date_format)
-        on_progress(f"[{name}] {len(entries)} entries")
+        merged = merge_new(entries, old, date_format) if old else None
+        if merged is not None:
+            on_progress(f"[{name}] {len(merged) - len(old)} new, {len(merged)} total")
+            entries = merged
+        else:
+            on_progress(f"[{name}] {len(entries)} entries (full read)")
         results[name] = entries
     return results
 
@@ -137,10 +164,11 @@ def scrape(
     headless: bool = True,
     date_format: str | None = None,
     pause: float = 1.0,
+    known: dict[str, list[dict]] | None = None,
 ) -> dict[str, list[Entry]]:
     with sync_playwright() as p:
         ctx = open_context(p, session_dir, headless)
         try:
-            return scrape_context(ctx, only, date_format, pause)
+            return scrape_context(ctx, only, date_format, pause, known=known)
         finally:
             ctx.close()
