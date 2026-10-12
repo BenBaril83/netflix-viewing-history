@@ -11,6 +11,7 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 
+from .. import probe
 from .manager import Manager
 
 INGRESS_PEER = ipaddress.ip_address("172.30.32.2")  # the Supervisor
@@ -51,6 +52,17 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
             raise web.HTTPNotFound()
         return web.FileResponse(path, headers={"Cache-Control": "no-store"})
 
+    async def debug_probe(request: web.Request):
+        try:
+            body = await request.json()
+            return web.json_response({"results": await mgr.probe(body.get("steps"))})
+        except PermissionError as e:
+            raise web.HTTPForbidden(text=str(e))
+        except RuntimeError as e:
+            raise web.HTTPConflict(text=str(e))
+        except (probe.ProbeError, ValueError, AttributeError) as e:
+            raise web.HTTPBadRequest(text=str(e))
+
     async def login_start(_):
         return await action(mgr.start_login)
 
@@ -85,6 +97,7 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
     app.router.add_get("/", index)
     app.router.add_get("/status", status)
     app.router.add_get("/diag/{name}.png", diag_png)
+    app.router.add_post("/debug/probe", debug_probe)
     app.router.add_post("/login/start", login_start)
     app.router.add_post("/login/finish", login_finish)
     app.router.add_post("/scrape", scrape)
