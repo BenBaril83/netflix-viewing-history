@@ -45,6 +45,12 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
             raise web.HTTPConflict(text=str(e))
         return web.json_response(asdict(mgr.status))
 
+    async def diag_png(request: web.Request):
+        path = mgr.data_dir / "diag" / f"{request.match_info['name']}.png"
+        if request.match_info["name"] != "login" or not path.exists():
+            raise web.HTTPNotFound()
+        return web.FileResponse(path, headers={"Cache-Control": "no-store"})
+
     async def login_start(_):
         return await action(mgr.start_login)
 
@@ -78,6 +84,7 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
 
     app.router.add_get("/", index)
     app.router.add_get("/status", status)
+    app.router.add_get("/diag/{name}.png", diag_png)
     app.router.add_post("/login/start", login_start)
     app.router.add_post("/login/finish", login_finish)
     app.router.add_post("/scrape", scrape)

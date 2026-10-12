@@ -118,3 +118,12 @@ async def test_websockify_bridges_binary_frames_to_vnc(mgr, monkeypatch):
     finally:
         vnc.close()
         await vnc.wait_closed()
+
+
+async def test_ingress_serves_login_snapshot_only_when_present(mgr):
+    async with TestClient(TestServer(build_ingress_app(mgr, "t", dev=True))) as c:
+        assert (await c.get("/diag/login.png")).status == 404
+        (mgr.data_dir / "diag").mkdir()
+        (mgr.data_dir / "diag" / "login.png").write_bytes(b"\x89PNG")
+        assert (await c.get("/diag/login.png")).status == 200
+        assert (await c.get("/diag/other.png")).status == 404

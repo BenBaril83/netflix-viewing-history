@@ -8,12 +8,15 @@ body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:15px/1.5 sy
 .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:16px}
 button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer;margin-right:8px}
 button:disabled{opacity:.4;cursor:default}
+.warn{color:#b26a00}pre{white-space:pre-wrap;word-break:break-all;font-size:12px}img.snap{max-width:100%;border-radius:8px}
 code{word-break:break-all}.muted{color:var(--muted)}.err{color:var(--err)}
 iframe{width:100%;height:70vh;border:0;border-radius:8px;background:#000}
 </style></head><body>
 <div class="card"><h3 style="margin-top:0">Status</h3>
-<div id="st">Loading…</div><div id="err" class="err"></div>
+<div id="st">Loading…</div><div id="err" class="err"></div><div id="warn" class="warn"></div>
 <p><button id="bLogin">Sign in to Netflix</button><button id="bDone" hidden>Done</button><button id="bScrape">Refresh now</button></p></div>
+<div id="diag" class="card" hidden><h3 style="margin-top:0">What the browser saw</h3>
+<img id="diagImg" class="snap" alt="Last page the add-on looked at"><pre id="diagInfo"></pre></div>
 <div id="vnc" class="card" hidden><iframe id="frame"></iframe></div>
 <div class="card"><h3 style="margin-top:0">Integration setup</h3>
 <p class="muted">In Home Assistant add the <b>Netflix Viewing History</b> integration and enter:</p>
@@ -28,6 +31,10 @@ async function refresh(){
   $('st').textContent=(s.state==='scraping'?'Scraping: ':'')+(s.message||(s.logged_in?'Logged in.':'Not logged in.'))
     +(s.last_success?'  Last success: '+s.last_success:'')+(s.profiles.length?'  Profiles: '+s.profiles.join(', '):'');
   $('err').textContent=s.last_error||(s.needs_login?'Session expired, sign in again.':'');
+  $('warn').textContent=s.warning||'';
+  const d=s.diagnostics&&s.diagnostics.login, ds=d?JSON.stringify(d,null,1):'';
+  $('diag').hidden=!d||(inLogin);
+  if(d&&ds!==window.lastDiag){window.lastDiag=ds;$('diagInfo').textContent=ds;$('diagImg').src=base+'diag/login.png?'+Date.now();}
   $('bLogin').hidden=inLogin; $('bDone').hidden=!inLogin;
   $('bLogin').disabled=$('bScrape').disabled=s.state!=='idle';
   $('vnc').hidden=!inLogin;

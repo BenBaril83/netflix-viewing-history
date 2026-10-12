@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 PROFILES = {"AAA": "Ben", "BBB": "Kids"}
 PAGE = 20
+BROKEN_GATE = False  # when True the profile picker uses markup the scraper does not recognise
 
 
 def rows(profile, start, stop):
@@ -54,6 +55,15 @@ class Handler(BaseHTTPRequestHandler):
         u, cookies = urlparse(self.path), self._cookies()
         q = parse_qs(u.query)
         authed = cookies.get("NetflixId") == "valid"
+        if u.path == "/login":
+            return self._send("<html><body>Sign in</body></html>")
+        if u.path == "/ProfilesGate" and not authed:
+            self.send_response(302)
+            self.send_header("Location", "/login")
+            self.send_header("Content-Length", "0")
+            return self.end_headers()
+        if u.path == "/ProfilesGate" and BROKEN_GATE:
+            return self._send('<html><head><title>Who is watching</title></head><body><a href="/browse?profile=1">Ben</a></body></html>')
         if u.path == "/ProfilesGate":
             links = "".join(
                 f'<a href="/SwitchProfile?tkn={t}"><span class="profile-name">{n}</span></a>'
