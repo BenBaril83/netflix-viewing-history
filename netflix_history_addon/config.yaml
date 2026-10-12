@@ -1,5 +1,5 @@
 name: Netflix Viewing History
-version: "0.1.0"
+version: "0.1.1"
 slug: netflix-history
 description: Scrapes the viewing activity of every profile on your Netflix account
 url: https://github.com/BenBaril83/netflix-viewing-history

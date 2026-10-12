@@ -91,3 +91,30 @@ def test_token_is_stable_and_private(tmp_path):
     t = get_or_create_token(tmp_path)
     assert t == get_or_create_token(tmp_path) and len(t) > 30
     assert oct((tmp_path / "api_token").stat().st_mode)[-3:] == "600"
+
+
+async def test_websockify_bridges_binary_frames_to_vnc(mgr, monkeypatch):
+    """noVNC speaks binary websocket frames; the bridge must relay them to/from the VNC TCP port."""
+    import aiohttp
+
+    from netflix_history.addon import server
+
+    async def echo(reader, writer):
+        while data := await reader.read(1024):
+            writer.write(b"RFB:" + data)
+            await writer.drain()
+        writer.close()
+
+    vnc = await asyncio.start_server(echo, "127.0.0.1", 0)
+    monkeypatch.setattr(server, "VNC_PORT", vnc.sockets[0].getsockname()[1])
+    try:
+        async with TestClient(TestServer(build_ingress_app(mgr, "t", dev=True))) as c:
+            ws = await c.session.ws_connect(c.make_url("/websockify"), protocols=["binary"])
+            assert ws.protocol == "binary"  # noVNC refuses the connection without it
+            await ws.send_bytes(b"hello")
+            msg = await asyncio.wait_for(ws.receive(), 5)
+            assert msg.type == aiohttp.WSMsgType.BINARY and msg.data == b"RFB:hello"
+            await ws.close()
+    finally:
+        vnc.close()
+        await vnc.wait_closed()
