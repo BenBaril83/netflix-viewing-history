@@ -22,7 +22,7 @@ Two parts, both in this repo:
 Install: Settings → Add-ons → Add-on store → ⋮ → Repositories → add this repo's URL, install
 **Netflix Viewing History**, start it, open the sidebar panel and sign in. Then copy `custom_components/netflix_viewing_history`
 into your HA config (or add the repo to HACS as a custom *Integration* repository) and add the integration.
-Set the add-on's `date_format` (e.g. `%m/%d/%y`) to get the *Watched in last 7 days* sensor; without it that sensor is unknown.
+Set the add-on's `date_format` (e.g. `%y-%m-%d`, matching how Netflix shows dates for your account) to get the *Watched in last 7 days* sensor; without it that sensor is unknown.
 
 **Engine option.** `engine: chromium` (default) scrapes with the same Chromium used for login. `engine: obscura`
 scrapes through [Obscura](https://github.com/h4ckf0r0day/obscura), a lightweight headless browser (about 30 MB RAM vs 200+),
@@ -52,7 +52,11 @@ netflix-history scrape --show-browser    # watch it work / debug
 ```
 
 Netflix's date format depends on your account locale, so `date_raw` is always kept as-is;
-pass `--date-format` (a `strptime` pattern) to also get an ISO `date` column.
+pass `--date-format` (a `strptime` pattern, e.g. `%y-%m-%d` for Netflix's `26-8-25`) to also get an ISO `date` column.
+
+## How it reads Netflix
+
+It reads the "Who's watching?" screen for each profile's ID, then opens `/settings/viewed/<ID>` directly and clicks only "Show More" until the list is complete. There is no profile switching, so Profile Lock PINs are not needed, and it never touches the per-row "Hide from viewing history" controls.
 
 ## Caveats
 

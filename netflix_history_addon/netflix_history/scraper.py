@@ -8,7 +8,7 @@ from typing import Callable
 
 from playwright.sync_api import BrowserContext, Page, Playwright, sync_playwright
 
-from .parse import Entry, parse_entries, parse_profiles
+from .parse import ACTIVITY_READY_SELECTOR, GATE_TILE_SELECTOR, Entry, parse_entries, parse_profiles
 
 # Overridable so tests can point the scraper at a local fake site.
 BASE = os.environ.get("NETFLIX_BASE_URL", "https://www.netflix.com")
@@ -78,7 +78,7 @@ def list_profiles(page: Page) -> list[tuple[str, str]]:
     if "/login" in page.url:  # logged out: no point waiting for a picker that won't come
         raise NotLoggedIn("Netflix sent us to the login page.")
     try:
-        page.wait_for_selector("a[href*='tkn=']", timeout=PROFILES_TIMEOUT_MS)
+        page.wait_for_selector(GATE_TILE_SELECTOR, timeout=PROFILES_TIMEOUT_MS)
     except Exception:
         info = describe_page(page)
         if "/login" in info["url"]:
@@ -91,6 +91,7 @@ def list_profiles(page: Page) -> list[tuple[str, str]]:
 
 
 def _expand_all(page: Page, pause: float) -> None:
+    """Click "Show More" until the list stops growing. Never touches the per-row "Hide" controls."""
     while True:
         btn = page.get_by_role("button", name=SHOW_MORE)
         if btn.count() == 0 or not btn.first.is_enabled():
@@ -118,11 +119,11 @@ def scrape_context(
     profiles = list_profiles(page)
     wanted = {n.lower() for n in only} if only else None
     todo = [(n, t) for n, t in profiles if not wanted or n.lower() in wanted]
-    for i, (name, token) in enumerate(todo, 1):
-        on_progress(f"[{name}] switching profile ({i}/{len(todo)})")
-        page.goto(f"{BASE}/SwitchProfile?tkn={token}", wait_until="domcontentloaded")
-        page.goto(f"{BASE}/viewingactivity", wait_until="domcontentloaded")
-        page.wait_for_selector("li.retableRow, .structural", timeout=20000)
+    for i, (name, profile_id) in enumerate(todo, 1):
+        on_progress(f"[{name}] loading viewing activity ({i}/{len(todo)})")
+        # Each profile's page is addressable by its ID: no profile switching, and no PIN for locked profiles.
+        page.goto(f"{BASE}/settings/viewed/{profile_id}", wait_until="domcontentloaded")
+        page.wait_for_selector(ACTIVITY_READY_SELECTOR, timeout=20000)
         _expand_all(page, pause)
         entries = parse_entries(page.content(), name, date_format)
         on_progress(f"[{name}] {len(entries)} entries")

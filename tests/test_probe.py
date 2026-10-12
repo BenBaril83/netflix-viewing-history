@@ -54,7 +54,7 @@ def test_run_reads_a_page_and_rejects_bad_steps(monkeypatch, tmp_path):
                     {"links": True},
                     {"text": True},
                 ])
-                assert out[0]["url"].endswith("/ProfilesGate") and out[0]["title"] == "Who is watching"
+                assert out[0]["url"].endswith("/browse") and out[0]["title"] == "Who is watching"
                 assert out[1]["matches"] == 1 and "profile=1" not in out[1]["first"] and 'href="/browse"' in out[1]["first"]
                 assert out[2] == {"html": ".nothing-here", "matches": 0, "first": None}
                 assert out[3]["links"]["links"] == ["/browse"]

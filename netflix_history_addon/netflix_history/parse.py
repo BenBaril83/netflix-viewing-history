@@ -14,11 +14,15 @@ from bs4 import BeautifulSoup
 ROW_SELECTOR = "li.retableRow"
 DATE_SELECTOR = ".date"
 TITLE_LINK_SELECTOR = ".title a"
-PROFILE_LINK_SELECTOR = "a[href*='tkn=']"
-PROFILE_NAME_SELECTOR = ".profile-name"
+# "Who's watching?" screen: one <button data-uia="profile-selector+tile-<PROFILE_ID>"> per profile
+# (locked ones also contain a "...+lock" marker). The profile ID is what the activity page URL uses.
+GATE_TILE_SELECTOR = "button[data-uia^='profile-selector+tile-']"
+ACTIVITY_READY_SELECTOR = "li.retableRow, [data-uia='viewing-activity-header']"
 
 _TITLE_ID = re.compile(r"/title/(\d+)")
-_TOKEN = re.compile(r"tkn=([^&\"']+)")
+_PROFILE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+# 'Show: Season 2: "Episode"' / 'Show: Limited Series: "Episode"' / 'Show: Show: "Episode"'
+_EPISODE_TITLE = re.compile(r'^(?P<show>.+?): .+: ".*"$')
 
 
 @dataclass
@@ -44,11 +48,9 @@ def parse_date(raw: str, fmt: str | None) -> str | None:
 
 
 def split_show(title: str) -> str | None:
-    """Best effort: 'Show: Season 2: "Ep"' -> 'Show'. Movies return None."""
-    parts = title.split(": ")
-    if len(parts) >= 2 and re.search(r"season|series|part|volume|limited|chapter|book", parts[1], re.I):
-        return parts[0]
-    return None
+    """Best effort: 'Show: Season 2: "Ep"' -> 'Show'. Movies (no quoted episode name) return None."""
+    m = _EPISODE_TITLE.match(title)
+    return m.group("show") if m else None
 
 
 def parse_entries(html: str, profile: str, date_format: str | None = None) -> list[Entry]:
@@ -76,15 +78,13 @@ def parse_entries(html: str, profile: str, date_format: str | None = None) -> li
 
 
 def parse_profiles(html: str) -> list[tuple[str, str]]:
-    """Return [(name, switch_token)] from the 'Who's watching?' page."""
+    """Return [(name, profile_id)] from the 'Who's watching?' page."""
     soup = BeautifulSoup(html, "html.parser")
     seen, profiles = set(), []
-    for a in soup.select(PROFILE_LINK_SELECTOR):
-        m = _TOKEN.search(a.get("href", ""))
-        if not m or m.group(1) in seen:
+    for tile in soup.select(GATE_TILE_SELECTOR):
+        profile_id = tile["data-uia"].split("tile-", 1)[1]
+        if profile_id in seen or not _PROFILE_ID.match(profile_id):
             continue
-        name_el = a.select_one(PROFILE_NAME_SELECTOR)
-        name = (name_el or a).get_text(strip=True)
-        seen.add(m.group(1))
-        profiles.append((name or m.group(1), m.group(1)))
+        seen.add(profile_id)
+        profiles.append((tile.get_text(" ", strip=True) or profile_id, profile_id))
     return profiles
