@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright
 
 from netflix_history import probe, scraper
 from netflix_history.addon.manager import Manager, Options
-from netflix_history.addon.server import build_ingress_app
+from netflix_history.addon.server import build_api_app, build_ingress_app
 
 from . import fake_netflix
 
@@ -77,29 +77,35 @@ def mgr(tmp_path):
     m.close()
 
 
+AUTH = {"Authorization": "Bearer t"}
+
+
 async def test_probe_is_off_by_default(mgr):
     with pytest.raises(PermissionError):
         await mgr.probe([{"text": True}])
-    async with TestClient(TestServer(build_ingress_app(mgr, "t", dev=True))) as c:
-        assert (await c.post("/debug/probe", json={"steps": [{"text": True}]})).status == 403
+    async with TestClient(TestServer(build_api_app(mgr, "t"))) as c:
+        assert (await c.post("/api/debug/probe", headers=AUTH, json={"steps": [{"text": True}]})).status == 403
 
 
 async def test_probe_endpoint_when_enabled(mgr, monkeypatch):
     mgr.options.debug_probe = True
     monkeypatch.setattr(mgr, "_probe", lambda steps: [{"echo": steps}])
-    async with TestClient(TestServer(build_ingress_app(mgr, "t", dev=True))) as c:
-        r = await c.post("/debug/probe", json={"steps": [{"text": True}]})
+    async with TestClient(TestServer(build_api_app(mgr, "t"))) as c:
+        r = await c.post("/api/debug/probe", headers=AUTH, json={"steps": [{"text": True}]})
         assert r.status == 200 and (await r.json())["results"] == [{"echo": [{"text": True}]}]
         assert mgr.status.state == "idle"
         monkeypatch.setattr(mgr, "_probe", lambda steps: probe.run(None, steps))  # real validation, no browser needed
-        assert (await c.post("/debug/probe", json={"steps": "nope"})).status == 400
-        assert (await c.post("/debug/probe", data="not json")).status == 400
+        assert (await c.post("/api/debug/probe", headers=AUTH, json={"steps": "nope"})).status == 400
+        assert (await c.post("/api/debug/probe", headers=AUTH, data="not json")).status == 400
     mgr.status.logged_in = False
     with pytest.raises(RuntimeError):
         await mgr.probe([])
 
 
-async def test_probe_not_reachable_outside_ingress(mgr):
+async def test_probe_requires_the_api_token_and_is_not_on_ingress(mgr):
     mgr.options.debug_probe = True
-    async with TestClient(TestServer(build_ingress_app(mgr, "t", dev=False))) as c:
-        assert (await c.post("/debug/probe", json={"steps": []})).status == 403
+    async with TestClient(TestServer(build_api_app(mgr, "t"))) as c:
+        assert (await c.post("/api/debug/probe", json={"steps": []})).status == 401
+        assert (await c.post("/api/debug/probe", headers={"Authorization": "Bearer nope"}, json={"steps": []})).status == 401
+    async with TestClient(TestServer(build_ingress_app(mgr, "t", dev=True))) as c:
+        assert (await c.post("/debug/probe", json={"steps": []})).status in (404, 405)
