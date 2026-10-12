@@ -21,7 +21,8 @@ iframe{width:100%;height:70vh;border:0;border-radius:8px;background:#000}
 <div class="card"><h3 style="margin-top:0">Integration setup</h3>
 <p class="muted">In Home Assistant add the <b>Netflix Viewing History</b> integration and enter:</p>
 <p>Host: <code>__HOST__</code> <span class="muted">(port 8100; check the add-on's Info page if it can't connect)</span></p>
-<p>Token: <code>__TOKEN__</code></p></div>
+<p>Token: <code id="tok">__TOKEN__</code></p>
+<p><button id="bRotate">Rotate token</button> <span class="muted">Use this if the token was ever shared. The integration will ask for the new one.</span></p></div>
 <script>
 const $=id=>document.getElementById(id), base=location.pathname.replace(/\/?$/,'/');
 const post=p=>fetch(base+p,{method:'POST'}).then(r=>r.ok?r.json():r.text().then(t=>{throw t}));
@@ -46,6 +47,7 @@ async function refresh(){
 }
 $('bLogin').onclick=()=>{$('bLogin').disabled=true;post('login/start').then(refresh,e=>{$('err').textContent=e;refresh()})};
 $('bDone').onclick=()=>{$('bDone').disabled=true;post('login/finish').then(()=>{$('bDone').disabled=false;refresh()},e=>$('err').textContent=e)};
+$('bRotate').onclick=()=>{if(confirm('Create a new token? The old one stops working immediately, so the integration needs the new one.'))post('token/rotate').then(r=>{$('tok').textContent=r.token},e=>$('err').textContent=e)};
 $('bScrape').onclick=()=>post('scrape').then(refresh);
 $('bFull').onclick=()=>{if(confirm('Re-read the whole history from Netflix? This takes a few minutes.'))post('scrape?full=1').then(refresh)};
 refresh(); setInterval(refresh,3000);

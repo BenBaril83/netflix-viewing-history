@@ -12,7 +12,7 @@ import aiohttp
 from aiohttp import web
 
 from .. import probe
-from .manager import Manager
+from .manager import Manager, TokenStore
 
 INGRESS_PEER = ipaddress.ip_address("172.30.32.2")  # the Supervisor
 VNC_PORT = 5900
@@ -28,12 +28,17 @@ async def ingress_only(request: web.Request, handler):
     return await handler(request)
 
 
-def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Application:
+def _store(token: "str | TokenStore") -> TokenStore:
+    return token if isinstance(token, TokenStore) else TokenStore(token)
+
+
+def build_ingress_app(mgr: Manager, token: "str | TokenStore", dev: bool = False) -> web.Application:
+    tokens = _store(token)
     app = web.Application(middlewares=[ingress_only])
     app["dev"] = dev
 
     async def index(_):
-        html = UI.read_text().replace("__TOKEN__", token).replace("__HOST__", socket.gethostname())
+        html = UI.read_text().replace("__TOKEN__", tokens.value).replace("__HOST__", socket.gethostname())
         return web.Response(text=html, content_type="text/html")
 
     async def status(_):
@@ -51,6 +56,10 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
         if request.match_info["name"] != "login" or not path.exists():
             raise web.HTTPNotFound()
         return web.FileResponse(path, headers={"Cache-Control": "no-store"})
+
+    async def rotate_token(_):
+        """Issue a new API token; the old one stops working at once. Ingress only, never on the API."""
+        return web.json_response({"token": tokens.rotate()})
 
     async def login_start(_):
         return await action(mgr.start_login)
@@ -86,6 +95,7 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
     app.router.add_get("/", index)
     app.router.add_get("/status", status)
     app.router.add_get("/diag/{name}.png", diag_png)
+    app.router.add_post("/token/rotate", rotate_token)
     app.router.add_post("/login/start", login_start)
     app.router.add_post("/login/finish", login_finish)
     app.router.add_post("/scrape", scrape)
@@ -95,11 +105,12 @@ def build_ingress_app(mgr: Manager, token: str, dev: bool = False) -> web.Applic
     return app
 
 
-def build_api_app(mgr: Manager, token: str) -> web.Application:
+def build_api_app(mgr: Manager, token: "str | TokenStore") -> web.Application:
+    tokens = _store(token)
     @web.middleware
     async def auth(request: web.Request, handler):
         given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        if not hmac.compare_digest(given, token):
+        if not hmac.compare_digest(given, tokens.value):
             raise web.HTTPUnauthorized()
         return await handler(request)
 
