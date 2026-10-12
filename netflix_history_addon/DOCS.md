@@ -9,3 +9,5 @@ Only the Netflix session cookies are stored (in the add-on's private `/data`). `
 `strptime` pattern (e.g. `%m/%d/%y`) matching your Netflix locale; set it to get dated sensors.
 
 `engine`: `chromium` (default) or `obscura` (lighter; experimental, see the repo README). Sign-in always uses Chromium.
+
+`debug_probe` (default off): enables a read-only page inspector on the panel's internal API, for diagnosing changes to Netflix's pages. It can navigate Netflix paths and read sanitised page structure; it cannot click, type or run scripts.

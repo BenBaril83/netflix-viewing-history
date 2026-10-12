@@ -19,7 +19,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from .. import engine, scraper
+from .. import engine, probe, scraper
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class Options:
     scrape_interval_hours: int = 24
     date_format: str = ""
     engine: str = "chromium"
+    debug_probe: bool = False
 
     @classmethod
     def load(cls, path: Path) -> "Options":
@@ -42,6 +43,7 @@ class Options:
             scrape_interval_hours=int(raw.get("scrape_interval_hours", 24)),
             date_format=raw.get("date_format") or "",
             engine=raw.get("engine") or "chromium",
+            debug_probe=bool(raw.get("debug_probe", False)),
         )
 
 
@@ -207,6 +209,35 @@ class Manager:
                         engine.save_cookies(self.cookie_file, fresh)
             finally:
                 ctx.close()
+
+    def _probe(self, steps: list[dict]) -> list[dict]:
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        with sync_playwright() as p:
+            ctx = scraper.open_context(
+                p, self.session_dir, headless=not os.environ.get("DISPLAY"), args=scraper.CONTAINER_ARGS
+            )
+            try:
+                saved = engine.load_cookies(self.cookie_file)
+                if saved:
+                    ctx.add_cookies(saved)
+                return probe.run(ctx, steps)
+            finally:
+                ctx.close()
+
+    async def probe(self, steps: list[dict]) -> list[dict]:
+        """Read-only page inspection with the saved login (see probe.py). Needs `debug_probe` on."""
+        if not self.options.debug_probe:
+            raise PermissionError("Set the add-on option debug_probe to true to use this.")
+        if not self.status.logged_in:
+            raise RuntimeError("Not logged in")
+        if self._busy.locked():
+            raise RuntimeError(f"Busy ({self.status.state})")
+        async with self._busy:
+            self._set(SCRAPING, "Inspecting pages...")
+            try:
+                return await self._run(self._probe, steps)
+            finally:
+                self._set(IDLE)
 
     async def scrape(self) -> bool:
         """Run a full scrape. Returns False if something else is already running."""
