@@ -32,10 +32,11 @@ async function refresh(){
   $('bLogin').disabled=$('bScrape').disabled=s.state!=='idle';
   $('vnc').hidden=!inLogin;
   if(inLogin&&!$('frame').src){
-    $('frame').src=base+'novnc/vnc.html?autoconnect=true&resize=scale&path='+encodeURIComponent(base+'websockify');
+    // noVNC builds ws://host:port + '/' + path, so the path must NOT start with '/'.
+    $('frame').src=base+'novnc/vnc.html?autoconnect=true&resize=scale&path='+encodeURIComponent(base.replace(/^\//,'')+'websockify');
   } else if(!inLogin){ $('frame').removeAttribute('src'); }
 }
-$('bLogin').onclick=()=>post('login/start').then(refresh,e=>$('err').textContent=e);
+$('bLogin').onclick=()=>{$('bLogin').disabled=true;post('login/start').then(refresh,e=>{$('err').textContent=e;refresh()})};
 $('bDone').onclick=()=>{$('bDone').disabled=true;post('login/finish').then(()=>{$('bDone').disabled=false;refresh()},e=>$('err').textContent=e)};
 $('bScrape').onclick=()=>post('scrape').then(refresh);
 refresh(); setInterval(refresh,3000);
