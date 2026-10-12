@@ -24,8 +24,11 @@ def main() -> None:
     if args.cmd == "login":
         scraper.login(args.session_dir)
         return
-    results = scraper.scrape(
-        args.session_dir, args.profile, headless=not args.show_browser, date_format=args.date_format
-    )
+    try:
+        results = scraper.scrape(
+            args.session_dir, args.profile, headless=not args.show_browser, date_format=args.date_format
+        )
+    except scraper.NotLoggedIn as e:
+        raise SystemExit(f"{e} Run `netflix-history login` first.")
     for path in export.write_all(results, args.out):
         print("wrote", path)

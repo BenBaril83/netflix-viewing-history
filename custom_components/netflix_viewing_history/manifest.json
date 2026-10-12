@@ -1,0 +1,12 @@
+{
+  "domain": "netflix_viewing_history",
+  "name": "Netflix Viewing History",
+  "codeowners": ["@BenBaril83"],
+  "config_flow": true,
+  "documentation": "https://github.com/BenBaril83/netflix-viewing-history",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/BenBaril83/netflix-viewing-history/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

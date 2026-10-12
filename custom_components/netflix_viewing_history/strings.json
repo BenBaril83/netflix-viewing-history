@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to the Netflix Viewing History add-on",
+        "description": "The host and token are shown in the add-on's sidebar panel.",
+        "data": {"host": "Host", "port": "Port", "token": "Token"}
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the add-on. Is it running?",
+      "invalid_auth": "The token was rejected."
+    },
+    "abort": {"already_configured": "This add-on is already configured."}
+  },
+  "entity": {
+    "sensor": {
+      "last_watched": {"name": "Last watched"},
+      "total_watched": {"name": "Titles watched"},
+      "watched_7_days": {"name": "Watched in last 7 days"}
+    },
+    "button": {"refresh": {"name": "Refresh viewing history"}}
+  }
+}
