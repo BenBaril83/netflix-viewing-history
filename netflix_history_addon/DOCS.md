@@ -6,7 +6,7 @@
 4. Copy the host and token shown in the panel into the *Netflix Viewing History* integration.
 
 Only the Netflix session cookies are stored (in the add-on's private `/data`). `date_format` is a
-`strptime` pattern (e.g. `%m/%d/%y`) matching your Netflix locale; set it to get dated sensors.
+`strptime` pattern (e.g. `%y-%m-%d` for dates like `26-8-25`) matching your Netflix locale; set it to get dated sensors.
 
 `engine`: `chromium` (default) or `obscura` (lighter; experimental, see the repo README). Sign-in always uses Chromium.
 

@@ -21,6 +21,7 @@ def _sockets(socket_enabled):
 
 @pytest.fixture
 def site(monkeypatch):
+    fake_netflix.DELETE_HITS.clear()
     srv = fake_netflix.serve()
     monkeypatch.setattr(scraper, "BASE", f"http://127.0.0.1:{srv.server_port}")
     yield srv
@@ -41,8 +42,10 @@ def test_cookie_file_is_private(tmp_path):
 
 
 def check(results):
-    assert {n: len(es) for n, es in results.items()} == {"Ben": 45, "Kids": 3}
+    assert {n: len(es) for n, es in results.items()} == {"Ben": 45, "Kids": 3}  # incl. the locked profile
     assert results["Ben"][44].title == "Ben title 44" and results["Ben"][0].title_id == "1000"
+    assert results["Ben"][0].show == "Ben Show"
+    assert fake_netflix.DELETE_HITS == []  # only "Show More" is ever clicked, never "Hide from viewing history"
 
 
 def test_chromium_follows_show_more(site, tmp_path):

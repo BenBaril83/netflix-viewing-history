@@ -62,7 +62,7 @@ def test_list_profiles_distinguishes_logged_out_from_changed_markup(site, tmp_pa
             monkeypatch.setattr(fake_netflix, "BROKEN_GATE", True)
             with pytest.raises(scraper.ProfilesNotFound) as e:
                 scraper.list_profiles(page)
-            assert "/ProfilesGate" in str(e.value) and "/browse" in str(e.value)  # URL + links, no query strings
+            assert "/browse" in str(e.value) and "Links seen" in str(e.value)  # URL + links, no query strings
             assert "profile=1" not in str(e.value)
         finally:
             ctx.close()
@@ -73,7 +73,7 @@ async def test_login_check_succeeds_and_keeps_cookies(site, mgr, tmp_path):
     await mgr.finish_login()
     assert mgr.status.logged_in and mgr.status.last_error is None and mgr.status.warning is None
     assert (tmp_path / "diag" / "login.png").exists()
-    assert mgr.status.diagnostics["login"]["url"].endswith("/ProfilesGate")
+    assert mgr.status.diagnostics["login"]["url"].endswith("/browse")  # /ProfilesGate redirects here
     assert oct(mgr.cookie_file.stat().st_mode)[-3:] == "600"
     assert [c["name"] for c in engine.load_cookies(mgr.cookie_file)] == ["NetflixId"]
 
