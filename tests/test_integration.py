@@ -50,3 +50,29 @@ async def test_flow_ok_and_errors(hass):
     with patch(FLOW_FETCH, return_value=DATA), patch("custom_components.netflix_viewing_history.async_setup_entry", return_value=True):
         r = await hass.config_entries.flow.async_configure(r["flow_id"], CONN)
     assert r["type"] == FlowResultType.CREATE_ENTRY
+
+
+async def test_reauth_with_new_token(hass):
+    from homeassistant.config_entries import ConfigEntryState
+
+    entry = MockConfigEntry(domain=DOMAIN, data=CONN)
+    entry.add_to_hass(hass)
+    with patch(FETCH, side_effect=ConfigEntryAuthFailed):  # the add-on rotated its token
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f["context"]["source"] for f in flows] == ["reauth"]  # HA asked the user to re-authenticate
+
+    r = await hass.config_entries.flow.async_configure(flows[0]["flow_id"])
+    assert r["step_id"] == "reauth_confirm"
+    with patch(FLOW_FETCH, side_effect=ConfigEntryAuthFailed):
+        r = await hass.config_entries.flow.async_configure(flows[0]["flow_id"], {CONF_TOKEN: "still-wrong"})
+    assert r["errors"] == {"base": "invalid_auth"}
+
+    with patch(FLOW_FETCH, return_value=DATA), patch(FETCH, return_value=DATA):
+        r = await hass.config_entries.flow.async_configure(flows[0]["flow_id"], {CONF_TOKEN: "new-token"})
+        await hass.async_block_till_done()
+    assert r["type"] == FlowResultType.ABORT and r["reason"] == "reauth_successful"
+    assert entry.data[CONF_TOKEN] == "new-token" and entry.data[CONF_HOST] == "addon"
+    assert entry.state is ConfigEntryState.LOADED

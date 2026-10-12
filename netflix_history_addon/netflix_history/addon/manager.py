@@ -61,14 +61,40 @@ class Status:
     profiles: list[str] = field(default_factory=list)
 
 
+def _write_private(path: Path, text: str) -> None:
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    tmp.replace(path)
+
+
+class TokenStore:
+    """The API bearer token. Rotating takes effect immediately, with no restart."""
+
+    def __init__(self, value: str, path: Path | None = None):
+        self.value = value
+        self._path = path
+
+    @classmethod
+    def load(cls, data_dir: Path) -> "TokenStore":
+        path = data_dir / "api_token"
+        if path.exists() and path.read_text().strip():
+            return cls(path.read_text().strip(), path)
+        store = cls(secrets.token_urlsafe(32), path)
+        _write_private(path, store.value)
+        return store
+
+    def rotate(self) -> str:
+        new = secrets.token_urlsafe(32)
+        if self._path:
+            _write_private(self._path, new)  # persist first: a failed write must not leave a token only in memory
+        self.value = new
+        return new
+
+
 def get_or_create_token(data_dir: Path) -> str:
-    path = data_dir / "api_token"
-    if path.exists():
-        return path.read_text().strip()
-    token = secrets.token_urlsafe(32)
-    path.write_text(token)
-    path.chmod(0o600)
-    return token
+    return TokenStore.load(data_dir).value
 
 
 class Manager:
